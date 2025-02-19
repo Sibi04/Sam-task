@@ -1,45 +1,55 @@
-name: Deploy and Test SAM Application
+name: Build, Deploy, and Test AWS SAM Application
 
 on:
   push:
     branches:
-      - main  # Change this if you use a different branch for deployment
+      - main
 
 jobs:
   deploy:
-    name: Build, Deploy, and Test AWS SAM Application
+    name: Build, Deploy, and Test AWS SAM API
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout Code
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Step 2: Configure AWS Credentials (Use GitHub Secrets)
+      # Install Python 3.9 (Required for AWS SAM)
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # Change this to your AWS region
+          aws-region: us-east-1
 
-      # Step 3: Install AWS SAM CLI
       - name: Install AWS SAM CLI
         run: |
           sudo apt-get update && sudo apt-get install -y unzip
           curl -Lo aws-sam-cli-linux.zip https://github.com/aws/aws-sam-cli/releases/latest/download/aws-sam-cli-linux-x86_64.zip
           unzip aws-sam-cli-linux.zip -d sam-installation
-          sudo ./sam-installation/install --update
+          sudo ./sam-installation/install
 
-      # Step 4: Verify AWS SAM CLI Installation
       - name: Verify AWS SAM Installation
         run: sam --version
 
-      # Step 5: Build the SAM Application
+      # Ensure Python is in PATH
+      - name: Verify Python Installation
+        run: python3 --version
+
+      # Ensure AWS SAM detects Python 3.9
+      - name: Add Python to PATH
+        run: echo "/usr/bin/python3.9" >> $GITHUB_PATH
+
+      # Build the AWS SAM Application
       - name: Build SAM Application
         run: sam build
 
-      # Step 6: Deploy the SAM Application
+      # Deploy the AWS SAM Application
       - name: Deploy SAM Application
         run: |
           sam deploy --no-confirm-changeset --no-fail-on-empty-changeset \
@@ -48,23 +58,33 @@ jobs:
             --region us-east-1 \
             --resolve-s3
 
-      # Step 7: Get API Gateway URL from AWS CloudFormation
-      - name: Fetch API Gateway URL
-        id: get-api-url
+      # Test the API Endpoints after Deployment
+      - name: Test API Endpoints
         run: |
-          API_URL=$(aws cloudformation describe-stacks \
-            --stack-name sam-api-deploy \
-            --query "Stacks[0].Outputs[?OutputKey=='HelloApi'].OutputValue" \
-            --output text)
-          echo "API_URL=$API_URL" >> $GITHUB_ENV
+          echo "Testing API Endpoints..."
 
-      # Step 8: Test the API with a GET request
-      - name: Test API Endpoint
-        run: |
-          RESPONSE=$(curl -s -o response.txt -w "%{http_code}" $API_URL)
-          echo "Response: $(cat response.txt)"
-          echo "HTTP Status Code: $RESPONSE"
-          if [ "$RESPONSE" -ne 200 ]; then
-            echo "API test failed!"
+          # Replace with your API Gateway base URL
+          API_URL="https://cnwpws11si.execute-api.us-east-1.amazonaws.com/Prod"
+
+          # Test /hello endpoint
+          echo "Testing /hello endpoint..."
+          RESPONSE_HELLO=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/hello")
+          if [ "$RESPONSE_HELLO" -eq 200 ]; then
+            echo "✅ /hello endpoint is working!"
+          else
+            echo "❌ /hello endpoint test failed!"
             exit 1
           fi
+
+          # Test /hello/all endpoint
+          echo "Testing /hello/all endpoint..."
+          RESPONSE_TRIMBLE=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/hello/all")
+          if [ "$RESPONSE_TRIMBLE" -eq 200 ]; then
+            echo "✅ /hello/all endpoint is working!"
+          else
+            echo "❌ /hello/all endpoint test failed!"
+            exit 1
+          fi
+
+      - name: Deployment Completed
+        run: echo "🚀 AWS SAM API deployment and testing completed successfully!"
